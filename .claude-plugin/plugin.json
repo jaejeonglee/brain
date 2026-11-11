@@ -1,0 +1,9 @@
+{
+  "name": "brain",
+  "version": "0.1.0",
+  "description": "A notebook for Claude Code that survives sessions: preferences, decisions, lessons and work in progress kept as small checked Markdown pages in brain/ of the folder you open, read at every session start and committed automatically.",
+  "author": {
+    "name": "jaejeonglee"
+  },
+  "keywords": ["memory", "brain", "notes", "persistence"]
+}

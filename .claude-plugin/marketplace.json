@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "brain",
+  "description": "The brain plugin for Claude Code.",
+  "owner": {
+    "name": "jaejeonglee"
+  },
+  "plugins": [
+    {
+      "name": "brain",
+      "description": "A notebook for Claude Code that survives sessions, kept in brain/ of the folder you open.",
+      "source": "./"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "description": "Opens the notebook (brain/) at every session start and after compaction, reminds about a waiting tidy proposal, checks every edited page, and commits the notebook when a turn ends.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${CLAUDE_PLUGIN_ROOT}/bin/brain-signals.py\" session",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${CLAUDE_PLUGIN_ROOT}/bin/brain-signals.py\" prompt",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${CLAUDE_PLUGIN_ROOT}/bin/brain-check.py\" --post",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"${CLAUDE_PLUGIN_ROOT}/bin/brain-check.py\" --stop",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
