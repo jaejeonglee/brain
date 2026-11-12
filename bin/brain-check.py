@@ -41,6 +41,31 @@ CAP = re.compile(r"^<!-- cap: (\d+) lines / (\d+) KB -->\s*$")
 ENTRY = re.compile(r"^- \[(decision|fact|pref|rule|lesson|open|superseded)\]")
 MAX_LINE = 200
 CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)")
+SOURCE = re.compile(r"\(출처:\s*([^;)]*)")
+# 출처 칸에서 «파일 경로처럼 생긴 것»만 검사한다: 슬래시가 있고 흔한 문서·코드 확장자로 끝나는 것(#앵커·:줄번호 허용).
+# 커밋 해시, session:id, «사용자 2026-11-12» 같은 출처는 건드리지 않는다.
+PATHLIKE = re.compile(r"^(~?/?[\w.@+-]+(?:/[\w.@+-]+)+\.(?:md|txt|py|js|ts|tsx|json|ya?ml|sh|toml))(?:#\S*|:\d+)?$")
+
+
+def source_paths(line):
+    match = SOURCE.search(line)
+    if not match:
+        return []
+    found = []
+    for token in re.split(r"[,\s]+", match.group(1).strip()):
+        hit = PATHLIKE.match(token.strip("`'\""))
+        if hit:
+            found.append(hit.group(1))
+    return found
+
+
+def source_exists(path):
+    """경로는 ~/·절대경로 그대로, 그 밖에는 수첩을 연 폴더 기준으로 찾는다(예: wiki/projects/x.md → HOME/wiki/...)."""
+    if path.startswith("~"):
+        return os.path.exists(os.path.expanduser(path))
+    if path.startswith("/"):
+        return os.path.exists(path)
+    return os.path.exists(os.path.join(HOME, path))
 
 
 def capped_pages():
@@ -82,6 +107,9 @@ def check_page(rel):
             problems.append(f"{rel}:{number}: 한 줄 {len(line)}자 > {MAX_LINE}자")
         if line.startswith(("- [fact]", "- [decision]")) and "출처:" not in line:
             problems.append(f"{rel}:{number}: [fact]/[decision] 줄에 출처가 없음")
+        for path in source_paths(line):
+            if not source_exists(path):
+                problems.append(f"{rel}:{number}: 출처 파일이 없음 '{path}' (옮겼으면 출처를 고칠 것)")
     return problems
 
 
