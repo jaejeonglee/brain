@@ -208,7 +208,9 @@ GIT_ENV = {key: value for key, value in os.environ.items() if key not in ("GIT_D
 
 
 def git(*args):
-    return subprocess.run(["git", "-C", BRAIN, *args], capture_output=True, text=True, env=GIT_ENV)
+    # utf-8 whatever the shell's locale; surrogateescape keeps any odd byte in a file name as it is.
+    return subprocess.run(["git", "-C", BRAIN, *args], capture_output=True, encoding="utf-8", errors="surrogateescape",
+                          env=GIT_ENV)
 
 
 def own_git():
@@ -225,21 +227,30 @@ def is_notebook():
 
 
 def changed_paths():
-    """Uncommitted notebook files, relative to the opened folder."""
+    """Uncommitted notebook files, deleted ones included, relative to the opened folder ("brain/...")."""
     if not own_git():
         return []
-    top = git("rev-parse", "--show-toplevel").stdout.strip()
-    paths = []
-    for line in git("status", "--porcelain", "--untracked-files=all", "--", ".").stdout.splitlines():
-        path = line[3:].split(" -> ")[-1].strip().strip('"')
-        paths.append(os.path.relpath(os.path.join(top, path), HOME))
+    # -z: every name comes exactly as stored, NUL-separated. Without it git wraps non-ASCII names (Korean page
+    # names) in quotes with octal escapes. Names are relative to the repository top, which own_git() has just
+    # confirmed is brain/ itself.
+    fields = git("status", "--porcelain", "-z", "--untracked-files=all").stdout.split("\0")
+    paths, at = [], 0
+    while at < len(fields):
+        entry, at = fields[at], at + 1
+        if len(entry) < 4:  # the empty piece after the last NUL
+            continue
+        if "R" in entry[:2] or "C" in entry[:2]:
+            at += 1  # a rename or copy is followed by its old name, which is no longer on disk
+        paths.append(os.path.join("brain", entry[3:]))
     return paths
 
 
 def uncommitted_problems():
     """Bash edits skip the Edit|Write hook, so after Bash check every changed page and the log."""
     changed = changed_paths()
-    problems = [problem for rel in changed if is_checked_page(rel) for problem in check_page(rel)]
+    # A page that was moved or deleted is gone from disk: nothing to check, and it is not a problem.
+    problems = [problem for rel in changed if is_checked_page(rel) and os.path.isfile(os.path.join(HOME, rel))
+                for problem in check_page(rel)]
     if any(rel.startswith("brain/log/") for rel in changed):
         problems.extend(log_line_lengths())
     return problems
