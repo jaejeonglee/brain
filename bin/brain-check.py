@@ -213,6 +213,16 @@ def read_hook_input():
         return {}
 
 
+def notebook_rel(path):
+    """An edited file as "brain/..." when it is in the notebook, also when brain/ is a link to a folder elsewhere;
+    otherwise relative to the opened folder."""
+    real = os.path.realpath(path)
+    inside = os.path.relpath(real, os.path.realpath(BRAIN))
+    if inside != os.pardir and not inside.startswith(os.pardir + os.sep):
+        return os.path.join("brain", inside)
+    return os.path.relpath(real, HOME)
+
+
 def is_checked_page(rel):
     return rel.startswith("brain/") and rel.endswith(".md") and not rel.startswith(("brain/log/", "brain/archive/"))
 
@@ -228,27 +238,47 @@ def git(*args):
                           env=GIT_ENV)
 
 
-def own_git():
+def repo_top():
+    """Top folder of the repository git finds from brain/: its own, or a project's around it. "" if none."""
+    top = git("rev-parse", "--show-toplevel")
+    return top.stdout.rstrip("\n") if top.returncode == 0 else ""
+
+
+def own_git(top=None):
     """True only when brain/ is the top of its own repository. Without brain/.git, git answers for the project
     repository that encloses brain/, and committing there would put the notebook into the project's history."""
-    top = git("rev-parse", "--show-toplevel")
-    return top.returncode == 0 and os.path.realpath(top.stdout.strip()) == os.path.realpath(BRAIN)
+    top = repo_top() if top is None else top
+    try:
+        # samefile, not a string compare: brain/ may be a link, and macOS may spell the path in another case.
+        return bool(top) and os.path.samefile(top, BRAIN)
+    except OSError:
+        return False
+
+
+def no_own_git_reason():
+    """Why the notebook has no usable history of its own, in words for the user."""
+    if not os.path.lexists(os.path.join(BRAIN, ".git")):
+        return "brain/에 자체 git 기록(brain/.git)이 없음. brain/에서 git init -b main 하면 다시 저장한다"
+    complaint = git("rev-parse", "--show-toplevel").stderr.strip().splitlines()
+    return f"brain/.git을 git이 쓰지 못함({complaint[0] if complaint else '다른 저장소의 일부로 보임'})"
 
 
 def is_notebook():
-    """A notebook has its index or its own history. A project folder that merely happens to be called brain/
-    has neither and is left alone."""
-    return os.path.isfile(os.path.join(BRAIN, "INDEX.md")) or own_git()
+    """brain/ is the notebook only when it has the notebook's index. A project folder, a library clone or a
+    submodule that merely happens to be called brain/ is left alone, even with a git history of its own."""
+    return os.path.isfile(os.path.join(BRAIN, "INDEX.md"))
 
 
 def changed_paths():
-    """Uncommitted notebook files, deleted ones included, relative to the opened folder ("brain/...")."""
-    if not own_git():
+    """Uncommitted notebook files, deleted ones included, relative to the opened folder ("brain/..."). Read from
+    brain/'s own repository or, for checking only (never for committing), from a project repository around it."""
+    top = repo_top()
+    if not top:
         return []
+    own = own_git(top)
     # -z: every name comes exactly as stored, NUL-separated. Without it git wraps non-ASCII names (Korean page
-    # names) in quotes with octal escapes. Names are relative to the repository top, which own_git() has just
-    # confirmed is brain/ itself.
-    fields = git("status", "--porcelain", "-z", "--untracked-files=all").stdout.split("\0")
+    # names) in quotes with octal escapes. Names are relative to the repository top.
+    fields = git("status", "--porcelain", "-z", "--untracked-files=all", "--", ".").stdout.split("\0")
     paths, at = [], 0
     while at < len(fields):
         entry, at = fields[at], at + 1
@@ -256,7 +286,10 @@ def changed_paths():
             continue
         if "R" in entry[:2] or "C" in entry[:2]:
             at += 1  # a rename or copy is followed by its old name, which is no longer on disk
-        paths.append(os.path.join("brain", entry[3:]))
+        name = entry[3:]
+        # In its own repository every name is inside brain/ already, also when brain/ is a link to elsewhere.
+        paths.append(os.path.join("brain", name) if own
+                     else os.path.relpath(os.path.realpath(os.path.join(top, name)), HOME))
     return paths
 
 
@@ -273,7 +306,8 @@ def uncommitted_problems():
 
 def git_busy():
     git_dir = git("rev-parse", "--absolute-git-dir").stdout.strip()
-    markers = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
+    # sequencer: a multi-commit cherry-pick or revert still has commits to go after one conflict is committed.
+    markers = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer")
     if git_dir and any(os.path.exists(os.path.join(git_dir, marker)) for marker in markers):
         return True
     return bool(git("diff", "--name-only", "--diff-filter=U").stdout.strip())
@@ -287,7 +321,10 @@ def tell_user(message):
 def commit_brain():
     """Commit the notebook only, in its own repository, on main."""
     if not own_git():
-        tell_user("수첩 자동 저장 건너뜀: brain/에 자체 git 기록(brain/.git)이 없음. brain/에서 git init -b main 하면 다시 저장한다")
+        # Never commit into a repository that merely encloses brain/. Tell the user only when something is
+        # left unsaved, not at the end of every turn; the session-start signal covers the rest.
+        if changed_paths():
+            tell_user("수첩 자동 저장 건너뜀: " + no_own_git_reason())
         return
     if git_busy():
         return
@@ -322,7 +359,7 @@ def main():
         return 0
     if not is_notebook():
         if mode == "--report":
-            print(f"수첩 아님: {BRAIN} (INDEX.md도 자체 git 기록도 없음)")
+            print(f"수첩 아님: {BRAIN} (brain/INDEX.md 없음)")
             return 1
         return 0
     if mode == "--post":
@@ -333,7 +370,7 @@ def main():
             problems, warnings = uncommitted_problems(), []
         else:
             path = (data.get("tool_input") or {}).get("file_path") or ""
-            rel = os.path.relpath(os.path.realpath(path), HOME) if path else ""
+            rel = notebook_rel(path) if path else ""
             checked = is_checked_page(rel)
             problems = check_page(rel) if checked else []
             warnings = missing_sources(rel) if checked else []  # most likely a path Claude has just written
@@ -350,23 +387,26 @@ def main():
     if mode == "--stop":
         data = read_hook_input()
         problems, _, _ = full_check()  # warnings never hold up the turn or the save
+        # The hook cannot commit in the middle of a merge, and nothing else would say so: the notebook would
+        # silently stop being saved. Claude hears it with the first block of the turn (usually the conflict
+        # markers themselves), the user if it is still open on the retry.
+        busy = own_git() and git_busy()
+        for_claude = ("수첩 git에서 병합·cherry-pick·rebase가 진행 중이라 hook이 저장하지 못한다: 주간 정리 합치기라면"
+                      " 충돌을 고친 뒤 git -C brain commit 으로 직접 마치고, 아니면 사용자에게 알린다.")
+        for_user = "수첩 자동 저장 건너뜀: 수첩 git에서 병합·cherry-pick·rebase가 진행 중 (brain/에서 git status로 확인)"
         if problems:
             if data.get("stop_hook_active"):
-                tell_user("뇌 검사 경고(계속 남아 있어 저장 안 함): " + "; ".join(problems[:3]))
+                tell_user("수첩 자동 저장 건너뜀: 뇌 검사 문제가 남아 있음: " + "; ".join(problems[:3]))
                 return 0
-            print("턴을 끝내기 전에 뇌 규칙 위반을 고칠 것:\n" + "\n".join(problems[:10])
-                  + "\n고친 뒤 확인은 brain-check.py --report로 한다. 저장은 턴이 끝날 때 이 hook이 한다.",
+            print("턴을 끝내기 전에 뇌 규칙 위반을 고칠 것:\n" + "\n".join(problems[:10]) + "\n"
+                  + (for_claude if busy else "고친 뒤 확인은 brain-check.py --report로 한다. 저장은 턴이 끝날 때 이 hook이 한다."),
                   file=sys.stderr)
             return 2
-        if own_git() and git_busy():
-            # The hook cannot commit in the middle of a merge, and nothing else would say so: the notebook
-            # would silently stop being saved until someone finishes or aborts it.
-            note = ("수첩 git에서 병합·cherry-pick·rebase가 진행 중이라 저장하지 못함: 주간 정리 합치기라면 충돌을 고친 뒤"
-                    " 직접 커밋해 마치고, 아니면 사용자에게 알릴 것")
+        if busy:
             if data.get("stop_hook_active"):
-                tell_user(note)
+                tell_user(for_user)
                 return 0
-            print(note, file=sys.stderr)
+            print(for_claude, file=sys.stderr)
             return 2
         commit_brain()
         return 0
