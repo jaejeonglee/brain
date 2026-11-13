@@ -2,7 +2,8 @@
 """Brain size, format and index checks, and the end-of-turn commit. Used by the brain plugin's hooks and by hand.
 
 The notebook is brain/ in the folder Claude Code was opened in ($CLAUDE_PROJECT_DIR). It keeps its own git
-history (brain/.git), or the history of the folder's repository when brain/ is tracked there.
+history (brain/.git) and is committed only there: a repository that merely encloses brain/ (the project's own)
+is never used, so the notebook cannot end up in the project's history.
 
   --post    PostToolUse hook: check the one edited page, or after Bash every uncommitted page and the log.
             Exit 2 shows the problem to Claude.
@@ -201,17 +202,31 @@ def is_checked_page(rel):
     return rel.startswith("brain/") and rel.endswith(".md") and not rel.startswith(("brain/log/", "brain/archive/"))
 
 
+# git takes these from the environment before anything else. Set by whoever started Claude Code (a git hook,
+# a dotfiles shell), they would point every command below at some other repository.
+GIT_ENV = {key: value for key, value in os.environ.items() if key not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
+
+
 def git(*args):
-    return subprocess.run(["git", "-C", BRAIN, *args], capture_output=True, text=True)
+    return subprocess.run(["git", "-C", BRAIN, *args], capture_output=True, text=True, env=GIT_ENV)
 
 
-def has_git():
-    return git("rev-parse", "--git-dir").returncode == 0
+def own_git():
+    """True only when brain/ is the top of its own repository. Without brain/.git, git answers for the project
+    repository that encloses brain/, and committing there would put the notebook into the project's history."""
+    top = git("rev-parse", "--show-toplevel")
+    return top.returncode == 0 and os.path.realpath(top.stdout.strip()) == os.path.realpath(BRAIN)
+
+
+def is_notebook():
+    """A notebook has its index or its own history. A project folder that merely happens to be called brain/
+    has neither and is left alone."""
+    return os.path.isfile(os.path.join(BRAIN, "INDEX.md")) or own_git()
 
 
 def changed_paths():
     """Uncommitted notebook files, relative to the opened folder."""
-    if not has_git():
+    if not own_git():
         return []
     top = git("rev-parse", "--show-toplevel").stdout.strip()
     paths = []
@@ -244,8 +259,11 @@ def tell_user(message):
 
 
 def commit_brain():
-    """Commit the notebook only, on main."""
-    if not has_git() or git_busy():
+    """Commit the notebook only, in its own repository, on main."""
+    if not own_git():
+        tell_user("수첩 자동 저장 건너뜀: brain/에 자체 git 기록(brain/.git)이 없음. brain/에서 git init -b main 하면 다시 저장한다")
+        return
+    if git_busy():
         return
     branch = git("symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
     if branch != "main":
@@ -274,6 +292,11 @@ def main():
     if not os.path.isdir(BRAIN):
         if mode == "--report":
             print(f"수첩 없음: {BRAIN}")
+            return 1
+        return 0
+    if not is_notebook():
+        if mode == "--report":
+            print(f"수첩 아님: {BRAIN} (INDEX.md도 자체 git 기록도 없음)")
             return 1
         return 0
     if mode == "--post":
