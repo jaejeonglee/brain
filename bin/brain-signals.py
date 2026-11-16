@@ -166,9 +166,13 @@ def signals():
     else:
         found.append("수첩에 자체 git 기록(brain/.git)이 없다: 자동 저장이 안 된다 → 사용자에게 알릴 것(brain/에서 git init -b main)")
     report = run("/usr/bin/python3", CHECK, "--report", cwd=HOME).splitlines()
-    problems = [line for line in report[1:] if line and not line.startswith("문제")]
+    problems = [line for line in report[1:] if line and not line.startswith(("문제", "경고: "))]
+    warnings = [line[len("경고: "):] for line in report[1:] if line.startswith("경고: ")]
     if problems:
         found.append(f"뇌 검사 문제 {len(problems)}건: {problems[0]}")
+    if warnings:
+        found.append(f"출처 파일이 없는 줄 {len(warnings)}건(저장은 막지 않음): {warnings[0]}"
+                     " → 옮긴 곳을 알면 출처를 고치고, 모르면 사용자에게 물을 것")
     found.extend(version_drift())
     age = backup_age_days()
     if age is not None and age > 7 and once("backup", 7):

@@ -9,7 +9,10 @@ is never used, so the notebook cannot end up in the project's history.
             Exit 2 shows the problem to Claude.
   --stop    Stop hook: check everything. Exit 2 keeps Claude working until fixed (once per stop),
             otherwise commit the notebook with the last log line as the message.
-  --report  Print every problem and the always-read size; exit 1 if any.
+  --report  Print every problem and warning and the always-read size; exit 1 if any problem.
+
+A source file that does not exist is a warning, not a problem: it is shown (after an edit of that page, and at
+session start) but never blocks the turn or the save.
 """
 import json
 import os
@@ -108,10 +111,20 @@ def check_page(rel):
             problems.append(f"{rel}:{number}: 한 줄 {len(line)}자 > {MAX_LINE}자")
         if line.startswith(("- [fact]", "- [decision]")) and "출처:" not in line:
             problems.append(f"{rel}:{number}: [fact]/[decision] 줄에 출처가 없음")
-        for path in source_paths(line):
-            if not source_exists(path):
-                problems.append(f"{rel}:{number}: 출처 파일이 없음 '{path}' (옮겼으면 출처를 고칠 것)")
     return problems
+
+
+def missing_sources(rel):
+    """Entry lines whose source file is not there. A warning, never a problem: the file may have been moved by
+    someone else and only the user knows where it went, so it must not hold up the turn or the save."""
+    try:
+        with open(os.path.join(HOME, rel), encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []  # check_page() already reports a page it cannot read
+    return [f"{rel}:{number}: 출처 파일이 없음 '{path}' (옮겼으면 출처를 고칠 것)"
+            for number, line in enumerate(lines, 1) if ENTRY.match(line)
+            for path in source_paths(line) if not source_exists(path)]
 
 
 def check_index(pages):
@@ -175,17 +188,19 @@ def always_read_size():
 
 
 def full_check():
+    """Problems (they block the save), warnings (reported, never blocking) and the always-read size."""
     pages = capped_pages()
-    problems = []
+    problems, warnings = [], []
     for rel in pages:
         problems.extend(check_page(rel))
+        warnings.extend(missing_sources(rel))
     problems.extend(check_index(pages))
     problems.extend(log_line_lengths())
     problems.extend(archive_conflicts())
     size = always_read_size()
     if size > ALWAYS_READ_LIMIT:
         problems.append(f"항상 읽는 세 쪽 {size}자 > 상한 {ALWAYS_READ_LIMIT}자 (INDEX, me, now를 줄일 것)")
-    return problems, size
+    return problems, warnings, size
 
 
 def read_hook_input():
@@ -313,18 +328,28 @@ def main():
     if mode == "--post":
         data = read_hook_input()
         if data.get("tool_name") == "Bash":
-            problems = uncommitted_problems()
+            # Missing source files are left to the session-start signal here: after Bash every uncommitted page
+            # is looked at, so one moved file would be repeated after every command.
+            problems, warnings = uncommitted_problems(), []
         else:
             path = (data.get("tool_input") or {}).get("file_path") or ""
             rel = os.path.relpath(os.path.realpath(path), HOME) if path else ""
-            problems = check_page(rel) if is_checked_page(rel) else []
+            checked = is_checked_page(rel)
+            problems = check_page(rel) if checked else []
+            warnings = missing_sources(rel) if checked else []  # most likely a path Claude has just written
+        message = []
         if problems:
-            print("뇌 규칙 위반, 고칠 것:\n" + "\n".join(problems), file=sys.stderr)
+            message.append("뇌 규칙 위반, 고칠 것:\n" + "\n".join(problems))
+        if warnings:
+            message.append("뇌 경고(저장은 막지 않음). 경로를 잘못 적었으면 고치고, 파일이 옮겨졌는데 어디인지 모르면"
+                           " 사용자에게 알린다:\n" + "\n".join(warnings))
+        if message:
+            print("\n".join(message), file=sys.stderr)  # exit 2 after a tool only shows this to Claude
             return 2
         return 0
     if mode == "--stop":
         data = read_hook_input()
-        problems, _ = full_check()
+        problems, _, _ = full_check()  # warnings never hold up the turn or the save
         if problems:
             if data.get("stop_hook_active"):
                 tell_user("뇌 검사 경고(계속 남아 있어 저장 안 함): " + "; ".join(problems[:3]))
@@ -335,11 +360,14 @@ def main():
             return 2
         commit_brain()
         return 0
-    problems, size = full_check()
+    problems, warnings, size = full_check()
     print(f"항상 읽는 세 쪽: {size}자 (목표 {ALWAYS_READ_TARGET}자, 상한 {ALWAYS_READ_LIMIT}자)")
     for problem in problems:
         print(problem)
-    print("문제 없음" if not problems else f"문제 {len(problems)}건")
+    for warning in warnings:
+        print("경고: " + warning)  # brain-signals.py picks these lines out by this prefix
+    summary = "문제 없음" if not problems else f"문제 {len(problems)}건"
+    print(summary + (f" (경고 {len(warnings)}건, 저장은 막지 않음)" if warnings else ""))
     return 1 if problems else 0
 
 
