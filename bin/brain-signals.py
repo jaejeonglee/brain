@@ -64,22 +64,36 @@ def git_dir():
     """The notebook's own git folder, or "" when brain/ has none. A project repository that merely encloses
     brain/ does not count: brain-check.py never commits the notebook there."""
     top = git("rev-parse", "--show-toplevel")
-    if not top or os.path.realpath(top) != os.path.realpath(BRAIN):
-        return ""
-    return git("rev-parse", "--absolute-git-dir")
+    try:
+        # samefile, not a string compare: brain/ may be a link, and macOS may spell the path in another case.
+        own = bool(top) and os.path.samefile(top, BRAIN)
+    except OSError:
+        own = False
+    return git("rev-parse", "--absolute-git-dir") if own else ""
+
+
+def git_complaint():
+    """git's own first complaint about brain/, for a notebook whose brain/.git it will not use."""
+    try:
+        done = subprocess.run(["git", "-C", BRAIN, "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                              timeout=10, env=GIT_ENV)
+    except (OSError, subprocess.SubprocessError) as problem:
+        return problem.__class__.__name__
+    return (done.stderr.strip().splitlines() or ["다른 저장소의 일부로 보임"])[0]
 
 
 def is_notebook():
-    """A notebook has its index or its own history; a project folder that merely happens to be called brain/
-    (or a file of that name) has neither, and the plugin stays out of it."""
-    return os.path.isfile(os.path.join(BRAIN, "INDEX.md")) or bool(git_dir())
+    """brain/ is the notebook only when it has the notebook's index. A project folder, a library clone or a
+    submodule that merely happens to be called brain/ (or a file of that name) is left alone."""
+    return os.path.isfile(os.path.join(BRAIN, "INDEX.md"))
 
 
 def once(name, every_days):
-    """True at most once per period per reminder name; the marker lives in the notebook's git folder."""
+    """True at most once per period per reminder name; the marker lives in the notebook's git folder.
+    Without one there is nowhere to remember, and a reminder that cannot be rate-limited stays quiet."""
     folder = git_dir()
     if not folder:
-        return True
+        return False
     marker = os.path.join(folder, f"brain-reminded-{name}")
     try:
         with open(marker, encoding="utf-8") as handle:
@@ -114,7 +128,8 @@ def tidy_waiting():
 
 def git_busy():
     folder = git_dir()
-    markers = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
+    # sequencer: a multi-commit cherry-pick or revert still has commits to go after one conflict is committed.
+    markers = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer")
     return bool(folder) and any(os.path.exists(os.path.join(folder, marker)) for marker in markers)
 
 
@@ -153,7 +168,7 @@ def signals():
         found.append(f"지금판에 진행 중인 일 {goals}건: 이어서 할 것이 있는지 본다")
     if git_dir():
         if git_busy():
-            found.append("수첩 git에서 병합·cherry-pick 진행 중: 마치거나 --abort 하기 전에는 자동 저장이 안 된다")
+            found.append("수첩 git에서 병합·cherry-pick·rebase 진행 중: 마치거나 --abort 하기 전에는 자동 저장이 안 된다")
         branch = git("symbolic-ref", "--short", "-q", "HEAD")
         if branch != "main":
             found.append(f"수첩 git이 main이 아님({branch or 'detached HEAD'}): 자동 저장이 안 된다")
@@ -163,6 +178,8 @@ def signals():
         waiting = tidy_waiting()
         if waiting:
             found.append(f"주간 정리안 대기: {', '.join(waiting)} → 사용자에게 3줄 요약과 함께 적용 여부를 물을 것")
+    elif os.path.lexists(os.path.join(BRAIN, ".git")):
+        found.append(f"brain/.git을 git이 쓰지 못한다({git_complaint()}): 자동 저장이 안 된다 → 사용자에게 알릴 것")
     else:
         found.append("수첩에 자체 git 기록(brain/.git)이 없다: 자동 저장이 안 된다 → 사용자에게 알릴 것(brain/에서 git init -b main)")
     report = run("/usr/bin/python3", CHECK, "--report", cwd=HOME).splitlines()
@@ -175,7 +192,8 @@ def signals():
                      " → 옮긴 곳을 알면 출처를 고치고, 모르면 사용자에게 물을 것")
     found.extend(version_drift())
     age = backup_age_days()
-    if age is not None and age > 7 and once("backup", 7):
+    # Only when it will fit under the cut in main(): once() marks the reminder as given for 7 days.
+    if age is not None and age > 7 and len(found) < 8 and once("backup", 7):
         found.append(f"Time Machine 마지막 완료 백업 {age}일 전: 백업 디스크 연결을 사용자에게 한 번 알릴 것")
     log = os.path.join(BRAIN, "log", f"{date.today():%Y-%m}.md")
     if os.path.exists(log):
@@ -207,7 +225,7 @@ def pages():
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "session"
     if mode == "prompt":
-        if os.path.isdir(BRAIN) and git_dir():
+        if os.path.isdir(BRAIN) and is_notebook() and git_dir():
             waiting = tidy_waiting()
             if waiting and once("tidy-" + "-".join(waiting).replace("/", "_"), 1):
                 print(f"[뇌] 주간 정리안 대기: {', '.join(waiting)} → 사용자에게 3줄 요약과 함께 적용 여부를 물을 것")
@@ -216,8 +234,9 @@ def main():
     if not os.path.lexists(BRAIN):
         lines.append(create_brain())
     elif not is_notebook():
-        print("[뇌] 이 폴더의 brain은 수첩이 아니다(brain/INDEX.md도 자체 git 기록도 없음). "
-              "이 폴더에서는 수첩을 쓰지 않는다. 사용자에게 한 줄로 알릴 것.")
+        print("[뇌] 이 폴더의 brain은 수첩이 아니다(brain/INDEX.md 없음). 손대지 않고, 이 폴더에서는 수첩을 쓰지 않는다."
+              " 사용자에게 한 줄로 알릴 것. 수첩이었는데 INDEX.md만 지워졌다면 되살리면 다시 쓴다"
+              "(git -C brain checkout -- INDEX.md).")
         return 0
     lines.extend(RULES)
     found = signals()
