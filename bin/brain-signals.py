@@ -28,9 +28,14 @@ RULES = [
 ]
 
 
+# git takes these from the environment before anything else. Set by whoever started Claude Code (a git hook,
+# a dotfiles shell), they would point every git command here at some other repository.
+GIT_ENV = {key: value for key, value in os.environ.items() if key not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
+
+
 def run(*args, cwd=None):
     try:
-        return subprocess.run(list(args), capture_output=True, text=True, timeout=10, cwd=cwd).stdout.strip()
+        return subprocess.run(list(args), capture_output=True, text=True, timeout=10, cwd=cwd, env=GIT_ENV).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
 
@@ -44,9 +49,10 @@ def create_brain():
     shutil.copytree(TEMPLATE, BRAIN)
     note = "[뇌] 이 폴더에 새 수첩 brain/을 만들었다(자기 git 기록, 원격 없음). 사용자에게 한 줄로 알릴 것."
     try:
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=BRAIN, check=True, capture_output=True, timeout=10)
-        subprocess.run(["git", "add", "-A"], cwd=BRAIN, check=True, capture_output=True, timeout=10)
-        made = subprocess.run(["git", "commit", "-q", "-m", "brain: start"], cwd=BRAIN, capture_output=True, text=True, timeout=10)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=BRAIN, check=True, capture_output=True, timeout=10, env=GIT_ENV)
+        subprocess.run(["git", "add", "-A"], cwd=BRAIN, check=True, capture_output=True, timeout=10, env=GIT_ENV)
+        made = subprocess.run(["git", "commit", "-q", "-m", "brain: start"], cwd=BRAIN, capture_output=True, text=True,
+                              timeout=10, env=GIT_ENV)
         if made.returncode != 0:
             note += " 첫 저장 실패: " + (made.stderr.strip().splitlines() or ["?"])[-1] + " (git 사용자 이름·이메일 설정이 필요할 수 있다)"
     except (OSError, subprocess.SubprocessError) as problem:
@@ -55,7 +61,18 @@ def create_brain():
 
 
 def git_dir():
+    """The notebook's own git folder, or "" when brain/ has none. A project repository that merely encloses
+    brain/ does not count: brain-check.py never commits the notebook there."""
+    top = git("rev-parse", "--show-toplevel")
+    if not top or os.path.realpath(top) != os.path.realpath(BRAIN):
+        return ""
     return git("rev-parse", "--absolute-git-dir")
+
+
+def is_notebook():
+    """A notebook has its index or its own history; a project folder that merely happens to be called brain/
+    (or a file of that name) has neither, and the plugin stays out of it."""
+    return os.path.isfile(os.path.join(BRAIN, "INDEX.md")) or bool(git_dir())
 
 
 def once(name, every_days):
@@ -147,7 +164,7 @@ def signals():
         if waiting:
             found.append(f"주간 정리안 대기: {', '.join(waiting)} → 사용자에게 3줄 요약과 함께 적용 여부를 물을 것")
     else:
-        found.append("수첩에 git 기록이 없다: 자동 저장이 안 된다")
+        found.append("수첩에 자체 git 기록(brain/.git)이 없다: 자동 저장이 안 된다 → 사용자에게 알릴 것(brain/에서 git init -b main)")
     report = run("/usr/bin/python3", CHECK, "--report", cwd=HOME).splitlines()
     problems = [line for line in report[1:] if line and not line.startswith("문제")]
     if problems:
@@ -192,8 +209,12 @@ def main():
                 print(f"[뇌] 주간 정리안 대기: {', '.join(waiting)} → 사용자에게 3줄 요약과 함께 적용 여부를 물을 것")
         return 0
     lines = []
-    if not os.path.isdir(BRAIN):
+    if not os.path.lexists(BRAIN):
         lines.append(create_brain())
+    elif not is_notebook():
+        print("[뇌] 이 폴더의 brain은 수첩이 아니다(brain/INDEX.md도 자체 git 기록도 없음). "
+              "이 폴더에서는 수첩을 쓰지 않는다. 사용자에게 한 줄로 알릴 것.")
+        return 0
     lines.extend(RULES)
     found = signals()
     if found:
