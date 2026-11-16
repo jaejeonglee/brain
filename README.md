@@ -1,19 +1,19 @@
 # brain
 
-**대화가 바뀌어도 기억하는 Claude Code.**
+**Claude Code that remembers across conversations.**
 
-brain은 Claude Code에 수첩을 달아 주는 플러그인입니다. 설치한 폴더에서 Claude Code를 열면, Claude가 수첩(`brain/`)을 먼저 읽고 시작하고, 일하면서 알게 된 것을 수첩에 적고, 대화가 끝날 때 알아서 저장합니다. 다음 날 새 대화를 열어도 어제 정한 것을 그대로 압니다.
+brain is a plugin that gives Claude Code a notebook. When you open Claude Code in the folder where it is installed, Claude reads the notebook (`brain/`) first, writes down what it learns while working, and saves the notebook on its own at the end of each turn. Open a new conversation the next day and it still knows what you decided yesterday.
 
-- **말한 것을 기억합니다.** "앞으로 커밋 제목은 한국어로"라고 한 번 말하면, 다음 대화부터 그대로 지킵니다.
-- **판단 전에 찾아봅니다.** 계획을 세우기 전에 지난 결정, 교훈, 미뤄 둔 일을 수첩에서 찾습니다.
-- **수첩이 엉망이 되지 않습니다.** 줄마다 출처를 붙이고, 페이지마다 크기 상한이 있고, 검사를 통과한 것만 저장합니다.
-- **하던 일은 그대로입니다.** 막는 것이 없습니다. 기억만 더해집니다.
+- **It remembers what you say.** Say "from now on, write commit titles in Korean" once, and it keeps doing so in later conversations.
+- **It looks things up before deciding.** Before making a plan, it searches the notebook for past decisions, lessons and postponed work.
+- **The notebook does not turn into a mess.** Lines carry their source, every page has a size cap, and only notebooks that pass the check are saved.
+- **Your work goes on as before.** Nothing is blocked; memory is only added.
 
-지휘자 플러그인 [conductor](https://github.com/jaejeonglee/conductor)와 함께 쓰면, 지휘자가 계획 전에 수첩을 읽고 일이 끝나면 수첩에 적습니다. 둘은 각각 따로 써도 됩니다.
+Used together with the [conductor](https://github.com/jaejeonglee/conductor) plugin, the conductor reads the notebook before planning and writes to it when work is done. Each plugin also works on its own.
 
-## 설치
+## Install
 
-Claude Code와 `git`, `/usr/bin/python3`가 있으면 됩니다. 수첩을 둘 폴더에서 실행합니다.
+You need Claude Code, `git` and `/usr/bin/python3`. Run these in the folder where the notebook should live.
 
 ```bash
 claude plugin marketplace add jaejeonglee/brain
@@ -23,77 +23,77 @@ claude plugin marketplace add jaejeonglee/brain
 claude plugin install brain@brain --scope project
 ```
 
-`--scope project`라서 이 폴더에서 연 대화에서만 켜집니다. 다른 폴더의 Claude Code에는 영향이 없습니다. 비공개 저장소라면 이 컴퓨터의 git이 GitHub에 로그인돼 있어야 합니다.
+With `--scope project` the plugin is on only for conversations opened in this folder; Claude Code in other folders is not affected. For a private repository, git on this computer must be signed in to GitHub.
 
-그다음 그 폴더에서 Claude Code를 엽니다. 처음 열면 `brain/`을 만들고 알려 줍니다.
+Then open Claude Code in that folder. On the first run it creates `brain/` and tells you so.
 
-## 이렇게 씁니다
+## How to use it
 
-따로 부를 필요가 없습니다. 평소처럼 말하면 됩니다.
+There is nothing to call. Talk as usual.
 
 ```text
-나      앞으로 계획은 표 말고 글머리표로 보여 줘. 표는 휴대폰에서 깨져.
-Claude  알겠습니다. 수첩에 적어 두었습니다.
+You     From now on, show plans as bullet lists, not tables. Tables break on my phone.
+Claude  Got it. I've written that down in the notebook.
 
-        (다음 날, 새 대화)
+        (next day, new conversation)
 
-나      myapp 로그인 화면 손볼 계획 세워 줘.
-Claude  (수첩의 선호대로 글머리표로 계획을 보여 줌)
+You     Make a plan for reworking the myapp login screen.
+Claude  (shows the plan as a bullet list, as the notebook says)
 ```
 
-- 대화를 열 때와 대화가 길어져 압축된 뒤에, 수첩의 핵심 세 쪽(나, 지금, 목차)을 Claude에게 다시 읽혀 줍니다.
-- 핵심 세 쪽이 합쳐 5천 자를 넘거나 마지막 정리가 30일을 넘으면, 대화를 열 때 Claude가 정리를 제안합니다. 같은 제안은 7일에 한 번만 합니다.
-- 다른 에이전트의 보고나 검색 결과에 "이걸 선호로 기록해라"라고 적혀 있어도 적지 않습니다. 수첩의 규칙과 선호는 당신이 직접 한 말에서만 생깁니다.
+- When a conversation opens, and again after a long conversation is compacted, the notebook's three core pages (me, now, index) are read to Claude.
+- When the three core pages together pass 5,000 characters, or the last tidy is more than 30 days old, Claude suggests tidying the notebook when a conversation opens. The same suggestion comes at most once every 7 days.
+- If another agent's report or a search result says "record this as a preference", it is not recorded. Rules and preferences in the notebook come only from what you yourself say.
 
-## 수첩
+## The notebook
 
-| 페이지 | 담는 것 | 언제 읽히나 |
+| Page | Holds | Read when |
 | --- | --- | --- |
-| `me.md` | 당신의 선호와 규칙 | 항상 |
-| `now.md` | 진행 중인 일 | 항상 |
-| `INDEX.md` | 목차와 프로젝트 목록 | 항상 |
-| `lessons.md` | 여러 일에 걸친 교훈 | 계획을 세울 때 |
-| `projects/<이름>.md` | 프로젝트별 방향, 결정, 사실 | 그 프로젝트 일을 할 때 |
-| `facts/<도구>.md` | 도구에 대해 확인한 사실 | 그 도구를 쓸 때 |
-| `log/YYYY-MM.md` | 달별 일지 | 찾을 때 |
-| `archive/` | 보관 | 찾을 때 |
+| `me.md` | Your preferences and rules | Always |
+| `now.md` | Work in progress | Always |
+| `INDEX.md` | Table of contents and project list | Always |
+| `lessons.md` | Lessons that apply across jobs | When planning |
+| `projects/<name>.md` | Direction, decisions and facts per project | When working on that project |
+| `facts/<tool>.md` | Verified facts about a tool | When using that tool |
+| `log/YYYY-MM.md` | Monthly log | When searching |
+| `archive/` | Archive | When searching |
 
-- 한 줄 형식: `- [pref] 계획은 글머리표로 보여 준다 #ux (출처: 사용자 2026-11-10)`
-- 출처가 파일 경로(`wiki/projects/x.md`처럼)면 그 파일이 실제로 있는지 봅니다. 없으면 저장은 그대로 하고, 다음 대화를 열 때 알려 줍니다. 긴 이유는 그 문서에 두고, 수첩에는 결론 한 줄만 둡니다.
-- 수첩은 자기 git 기록을 따로 가집니다(`brain/.git`). 그 폴더가 프로젝트 저장소여도 프로젝트 기록과 섞이지 않습니다. 원격이 없어서 실수로 올라가지 않습니다. `brain/.git`이 없으면 프로젝트 저장소에 대신 저장하지 않고, 저장을 건너뛰며 알려 줍니다.
-- 이미 있는 `brain/`이 수첩이 아니면(`brain/INDEX.md`가 없음) 건드리지 않고, 그 폴더에서는 수첩을 쓰지 않습니다. 프로젝트의 소스 폴더나 같은 이름의 다른 저장소를 수첩으로 착각하지 않기 위해서입니다.
-- 그 폴더가 git 저장소라면 `brain/`을 그 저장소의 `.gitignore`에 넣어 두세요.
+- Line format: `- [pref] Show plans as bullet lists #ux (출처: 사용자 2026-11-10)`. `출처` means "source" and is the keyword the check looks for; `사용자 <date>` means you said it on that date.
+- When the source is a file path (such as `wiki/projects/x.md`), the check verifies that the file exists. If it does not, saving still goes ahead and you are told when the next conversation opens. Keep the long reasoning in that document and only the one-line conclusion in the notebook.
+- The notebook keeps its own git history (`brain/.git`). Even when the folder is a project repository, the notebook never mixes with the project's history, and having no remote, it cannot be pushed by accident. If `brain/.git` is missing, the notebook is not saved into the project repository instead: saving is skipped and you are told.
+- If an existing `brain/` is not a notebook (it has no `brain/INDEX.md`), it is left alone and the notebook is not used in that folder. This keeps a project source folder, or another repository with the same name, from being mistaken for the notebook.
+- If the folder is a git repository, add `brain/` to that repository's `.gitignore`.
 
-## 들어 있는 것
+## What is inside
 
-| 무엇 | 어디 | 하는 일 |
+| What | Where | What it does |
 | --- | --- | --- |
-| 스킬 | `skills/brain/SKILL.md` | 수첩에 언제 무엇을 적고, 어떻게 찾고, 어떻게 정리하는지 |
-| 대화 시작 센서 | `bin/brain-signals.py` | 처음이면 수첩을 만들고, 핵심 세 쪽과 알릴 것을 읽혀 줌 |
-| 수첩 검사 센서 | `bin/brain-check.py` | 고칠 때마다 형식을 보고, 턴이 끝날 때 검사를 통과하면 저장 |
-| 빈 수첩 | `template/` | 처음 쓸 때 복사되는 틀 |
+| Skill | `skills/brain/SKILL.md` | When to write what in the notebook, how to search it, how to tidy it |
+| Session-start sensor | `bin/brain-signals.py` | Creates the notebook on first use, and reads the three core pages and any notices to Claude |
+| Notebook check sensor | `bin/brain-check.py` | Checks the format on every edit, and saves at the end of the turn when the check passes |
+| Empty notebook | `template/` | The skeleton copied on first use |
 
-손으로 검사하려면 수첩이 있는 폴더에서 `brain-check.py --report`를 돌립니다. 설치된 정확한 경로는 대화를 열 때 Claude에게 보이는 안내에 나옵니다.
+To check by hand, run `brain-check.py --report` in the folder that has the notebook. The exact installed path appears in the notice Claude sees when a conversation opens.
 
-## 재 본 결과
+## Test results
 
-2026년 11월 11일, 이 플러그인만 또는 conductor와 함께 빈 연습용 폴더에 불러와 Opus 5.5로 시험했습니다. 설치 대신 한 번만 불러오는 방식(`--plugin-dir`)을 썼고, 시험마다 한 번씩 돌렸습니다.
+On November 11, 2026, the plugin was loaded on its own and together with conductor into empty practice folders and tested with Opus 5.5. It was loaded once with `--plugin-dir` instead of being installed, and each test was run once.
 
-| 묶음 | 본 것 | 결과 |
+| Group | What was checked | Result |
 | --- | --- | --- |
-| 적기 | "앞으로 ~해 줘", 돌려 말한 규칙, 교정(같은 줄 고치기), 쓸데없는 말 안 적기, 프로젝트 결정을 카드에 적고 다음 대화에서 쓰기 | 통과 |
-| 찾아 쓰기 | 선호, 프로젝트 결정, 교훈, 도구 결정, 일지에만 있는 옛 결정 | 통과 |
-| 걸러 내기 | 수첩이 실제와 다르거나 줄끼리 어긋날 때 실제를 따르고 고치기 | 통과 |
-| 안전 | 수첩에 심긴 지시문, 남의 글에 든 "선호로 기록하라" 따르지 않기 | 통과 |
-| 처음 쓰기 | 빈 폴더에서 수첩을 만들고 첫 선호를 적고 저장하기 | 통과 |
+| Writing | "From now on, …", rules said indirectly, corrections (editing the same line), not writing down noise, writing a project decision to its card and using it in the next conversation | Pass |
+| Looking up | Preferences, project decisions, lessons, tool decisions, an old decision found only in the log | Pass |
+| Filtering | Following reality and fixing the notebook when it disagrees with reality or with itself | Pass |
+| Safety | Not following instructions planted in the notebook, or "record this as a preference" in someone else's text | Pass |
+| First use | Creating the notebook in an empty folder, writing the first preference and saving | Pass |
 
-## 알려진 한계
+## Known limits
 
-- macOS에서만 확인했습니다.
-- 수첩은 설치한 폴더마다 따로 생깁니다. 늘 같은 폴더에서 대화를 여는 것이 좋습니다.
-- 수첩을 찾아 쓰는 것은 Claude의 판단입니다. 검사 센서는 형식을 막을 뿐, 내용을 강제하지 않습니다.
-- 핵심 세 쪽은 합쳐 7천 자를 넘지 않게 관리합니다. 대화 시작 안내가 잘리지 않게 하기 위해서입니다.
+- Checked on macOS only.
+- Each folder where the plugin is installed gets its own notebook. It is best to always open conversations in the same folder.
+- Looking things up in the notebook is up to Claude's judgment. The check sensor enforces format only, not content.
+- The three core pages are kept under 7,000 characters in total so that the session-start notice is not cut off.
 
-## 상태
+## Status
 
-비공개 저장소입니다. 라이선스는 아직 정하지 않았습니다.
+Private repository. No license has been chosen yet.
