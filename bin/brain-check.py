@@ -358,6 +358,16 @@ def main():
                   + "\n고친 뒤 확인은 brain-check.py --report로 한다. 저장은 턴이 끝날 때 이 hook이 한다.",
                   file=sys.stderr)
             return 2
+        if own_git() and git_busy():
+            # The hook cannot commit in the middle of a merge, and nothing else would say so: the notebook
+            # would silently stop being saved until someone finishes or aborts it.
+            note = ("수첩 git에서 병합·cherry-pick·rebase가 진행 중이라 저장하지 못함: 주간 정리 합치기라면 충돌을 고친 뒤"
+                    " 직접 커밋해 마치고, 아니면 사용자에게 알릴 것")
+            if data.get("stop_hook_active"):
+                tell_user(note)
+                return 0
+            print(note, file=sys.stderr)
+            return 2
         commit_brain()
         return 0
     problems, warnings, size = full_check()
