@@ -48,7 +48,8 @@ CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)")
 # The source field is "(source: ..." in English notebooks and "(출처: ..." in notebooks written before the plugin
 # was translated. Both spellings are accepted so that existing notebooks keep passing.
 SOURCE = re.compile(r"\((?:[Ss]ource|출처):\s*([^;)]*)")
-HAS_SOURCE = re.compile(r"(?:[Ss]ource|출처):")
+# A word of its own: "resource:" or "datasource:" in the text must not count as a source field.
+HAS_SOURCE = re.compile(r"(?<![\w-])(?:[Ss]ource|출처):")
 # Only path-like pieces of the source field are checked: a slash, and a common document or code extension at the
 # end (an #anchor or :line is allowed). Commit hashes, session:id and "user 2026-11-12" are left alone.
 PATHLIKE = re.compile(r"^(~?/?[\w.@+-]+(?:/[\w.@+-]+)+\.(?:md|txt|py|js|ts|tsx|json|ya?ml|sh|toml))(?:#\S*|:\d+)?$")

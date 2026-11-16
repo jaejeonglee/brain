@@ -2,8 +2,8 @@
 # User
 To change something, edit the same line instead of adding one. [rule] and [pref] come only from the user's own words or a rule document the user approved (see the brain skill).
 
-## How I work
+## Working style
 
-## Things to keep
+## Rules to follow
 
-## How I talk
+## Communication style

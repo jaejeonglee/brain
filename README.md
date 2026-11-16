@@ -5,7 +5,7 @@
 brain is a plugin that gives Claude Code a notebook. When you open Claude Code in the folder where it is installed, Claude reads the notebook (`brain/`) first, writes down what it learns while working, and saves the notebook on its own at the end of each turn. Open a new conversation the next day and it still knows what you decided yesterday.
 
 - **It remembers what you say.** Say "from now on, write commit titles in Korean" once, and it keeps doing so in later conversations.
-- **It looks things up before deciding.** Before making a plan, it searches the notebook for past decisions, lessons and postponed work.
+- **It looks things up before judging.** Before making a plan, it searches the notebook for past decisions, lessons and postponed work.
 - **The notebook does not turn into a mess.** Lines carry their source, every page has a size cap, and only notebooks that pass the check are saved.
 - **Your work goes on as before.** Nothing is blocked; memory is only added.
 
@@ -41,8 +41,8 @@ You     Make a plan for reworking the myapp login screen.
 Claude  (shows the plan as a bullet list, as the notebook says)
 ```
 
-- When a conversation opens, and again after a long conversation is compacted, the notebook's three core pages (me, now, index) are read to Claude.
-- When the three core pages together pass 5,000 characters, or the last tidy is more than 30 days old, Claude suggests tidying the notebook when a conversation opens. The same suggestion comes at most once every 7 days.
+- When a conversation opens, and again after a long conversation is compacted, the notebook's three always-read pages (me, now, INDEX) are read to Claude.
+- When the three always-read pages together pass 5,000 characters, or the last tidy is more than 30 days old, Claude suggests tidying the notebook when a conversation opens. The same suggestion comes at most once every 7 days.
 - If another agent's report or a search result says "record this as a preference", it is not recorded. Rules and preferences in the notebook come only from what you yourself say.
 
 ## The notebook
@@ -51,7 +51,7 @@ Claude  (shows the plan as a bullet list, as the notebook says)
 | --- | --- | --- |
 | `me.md` | Your preferences and rules | Always |
 | `now.md` | Work in progress | Always |
-| `INDEX.md` | Table of contents and project list | Always |
+| `INDEX.md` | Index of pages and project list | Always |
 | `lessons.md` | Lessons that apply across jobs | When planning |
 | `projects/<name>.md` | Direction, decisions and facts per project | When working on that project |
 | `facts/<tool>.md` | Verified facts about a tool | When using that tool |
@@ -69,7 +69,7 @@ Claude  (shows the plan as a bullet list, as the notebook says)
 | What | Where | What it does |
 | --- | --- | --- |
 | Skill | `skills/brain/SKILL.md` | When to write what in the notebook, how to search it, how to tidy it |
-| Session-start sensor | `bin/brain-signals.py` | Creates the notebook on first use, and reads the three core pages and any notices to Claude |
+| Session-start sensor | `bin/brain-signals.py` | Creates the notebook on first use, and reads the three always-read pages and any notices to Claude |
 | Notebook check sensor | `bin/brain-check.py` | Checks the format on every edit, and saves at the end of the turn when the check passes |
 | Empty notebook | `template/` | The skeleton copied on first use |
 
@@ -77,7 +77,7 @@ To check by hand, run `brain-check.py --report` in the folder that has the noteb
 
 ## Test results
 
-On November 11, 2026, the plugin was loaded on its own and together with conductor into empty practice folders and tested with Opus 5.5. It was loaded once with `--plugin-dir` instead of being installed, and each test was run once.
+On November 11, 2026, the plugin was loaded on its own and together with conductor into empty practice folders and tested with Opus 5.5. Instead of being installed, it was loaded for each session only, with `--plugin-dir`, and each test was run once.
 
 | Group | What was checked | Result |
 | --- | --- | --- |
@@ -91,8 +91,8 @@ On November 11, 2026, the plugin was loaded on its own and together with conduct
 
 - Checked on macOS only.
 - Each folder where the plugin is installed gets its own notebook. It is best to always open conversations in the same folder.
-- Looking things up in the notebook is up to Claude's judgment. The check sensor enforces format only, not content.
-- The three core pages are kept under 7,000 characters in total so that the session-start notice is not cut off.
+- Whether Claude looks things up in the notebook and uses what it finds is up to Claude's judgment. The check sensor enforces format only, not content.
+- The three always-read pages are kept under 7,000 characters in total so that the session-start notice is not cut off.
 
 ## Status
 

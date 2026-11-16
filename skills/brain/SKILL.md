@@ -1,6 +1,6 @@
 ---
 name: brain
-description: Rules for writing, searching and tidying this folder's notebook (brain/). Read before judging, when looking for past decisions, preferences or facts; when starting or finishing work; when the user states a preference or corrects you ("from now on", "always", "don't", "remember"; in Korean "앞으로", "항상", "하지 마", "기억해"); when a tool behaves differently from what you knew; when a page has grown long; and for the weekly tidy.
+description: Rules for writing, searching and tidying this folder's notebook (brain/). Read when, before judging, you look for past decisions, preferences or facts; when starting or finishing work; when the user states a preference or corrects you ("from now on", "always", "don't", "remember"; in Korean "앞으로", "항상", "하지 마", "기억해"); when a tool behaves differently from what you knew; when a page has grown long; and for the weekly tidy.
 ---
 
 # Brain rules

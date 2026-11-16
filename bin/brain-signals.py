@@ -188,7 +188,7 @@ def signals():
     if git_dir():
         if git_busy():
             found.append("A merge, cherry-pick or rebase is in progress in the notebook's git: auto-save does not"
-                         " work until it is finished or aborted")
+                         " work until it is finished or stopped with --abort")
         branch = git("symbolic-ref", "--short", "-q", "HEAD")
         if branch != "main":
             found.append(f"The notebook's git is not on main ({branch or 'detached HEAD'}): auto-save does not work")
@@ -227,7 +227,8 @@ def signals():
     if size:
         chars, target, limit = (int(number) for number in size.groups())
         if target < chars <= limit and len(found) < 8 and once("size-target", NUDGE_EVERY_DAYS):
-            found.append(f"Always-read pages {chars} characters > target {target} (saving is blocked from {limit}):"
+            found.append(f"Always-read pages {chars} characters > target {target} (saving is blocked above {limit}"
+                         " characters):"
                          " suggest a tidy to the user in one line (move rarely used lines to lessons, project"
                          " cards or the archive)")
     found.extend(version_drift())
@@ -276,8 +277,8 @@ def main():
     if not os.path.lexists(BRAIN):
         lines.append(create_brain())
     elif not is_notebook():
-        print("[brain] This folder's brain is not a notebook (no brain/INDEX.md). It is left alone and the notebook"
-              " is not used in this folder. Tell the user in one line. If it was a notebook and only INDEX.md was"
+        print("[brain] This folder's brain is not a notebook (no brain/INDEX.md). Leave it alone and do not use the"
+              " notebook in this folder. Tell the user in one line. If it was a notebook and only INDEX.md was"
               " deleted, restoring it brings the notebook back (git -C brain checkout -- INDEX.md).")
         return 0
     lines.extend(RULES)
