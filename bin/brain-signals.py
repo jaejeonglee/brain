@@ -2,8 +2,9 @@
 """What the brain plugin prints into Claude's context. Silent when there is nothing to say.
 
   session  SessionStart (startup, resume, clear, compact): make brain/ on first use, print the notebook
-           rules, signals (work in progress, check problems, unsaved pages, tidy proposal, tool version
-           drift, backup age, oversized month log) and the always-read pages (INDEX, me, now).
+           rules, signals (work in progress, check problems, unsaved pages, tidy proposal, tidy due,
+           always-read pages over target, tool version drift, backup age, oversized month log) and the
+           always-read pages (INDEX, me, now).
   prompt   UserPromptSubmit: only a waiting tidy proposal, at most once a day.
 """
 import os
@@ -19,6 +20,8 @@ TEMPLATE = os.path.join(PLUGIN, "template")
 HOME = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 BRAIN = os.path.join(HOME, "brain")
 ALWAYS_READ = ["brain/INDEX.md", "brain/me.md", "brain/now.md"]
+TIDY_DUE_DAYS = 30     # suggest a weekly tidy when the last one (or the notebook's start) is older than this
+NUDGE_EVERY_DAYS = 7   # a "time to tidy" suggestion is repeated at most this often
 RULES = [
     "[뇌] 이 폴더의 수첩은 brain/이다. 쓰고 찾는 법은 brain 스킬을 따른다.",
     "- 판단하기 전에 brain 스킬의 찾는 순서로 수첩을 찾는다. 찾으면 되는 것은 묻지 않는다.",
@@ -126,6 +129,18 @@ def tidy_waiting():
     return waiting
 
 
+def days_since_tidy():
+    """(days, tidied): days since the last tidy commit on main (message starting with "tidy:"), or, when there
+    has never been one, since the notebook's first commit. days is None when neither can be read."""
+    last = git("log", "-1", "--grep=^tidy:", "--date=short", "--format=%ad", "main")
+    roots = git("log", "--max-parents=0", "--date=short", "--format=%ad", "main").splitlines()
+    stamp = last or (roots[-1] if roots else "")
+    try:
+        return (date.today() - date.fromisoformat(stamp)).days, bool(last)
+    except ValueError:
+        return None, bool(last)
+
+
 def git_busy():
     folder = git_dir()
     # sequencer: a multi-commit cherry-pick or revert still has commits to go after one conflict is committed.
@@ -178,6 +193,12 @@ def signals():
         waiting = tidy_waiting()
         if waiting:
             found.append(f"주간 정리안 대기: {', '.join(waiting)} → 사용자에게 3줄 요약과 함께 적용 여부를 물을 것")
+        else:
+            days, tidied = days_since_tidy()
+            # once() marks the suggestion as given, so only when it will fit under the cut in main().
+            if days is not None and days > TIDY_DUE_DAYS and len(found) < 8 and once("tidy-due", NUDGE_EVERY_DAYS):
+                since = f"마지막 주간 정리 {days}일 전" if tidied else f"주간 정리를 한 적 없음(수첩 시작 {days}일 전)"
+                found.append(f"{since}: 사용자에게 주간 정리를 한 줄로 제안할 것(하자고 할 때만 brain 스킬의 주간 정리)")
     elif os.path.lexists(os.path.join(BRAIN, ".git")):
         found.append(f"brain/.git을 git이 쓰지 못한다({git_complaint()}): 자동 저장이 안 된다 → 사용자에게 알릴 것")
     else:
@@ -190,6 +211,14 @@ def signals():
     if warnings:
         found.append(f"출처 파일이 없는 줄 {len(warnings)}건(저장은 막지 않음): {warnings[0]}"
                      " → 옮긴 곳을 알면 출처를 고치고, 모르면 사용자에게 물을 것")
+    # The first report line carries the always-read size and both numbers: warn between target and limit,
+    # before the limit starts blocking saves (over the limit it is already one of the problems above).
+    size = re.match(r"항상 읽는 세 쪽: (\d+)자 \(목표 (\d+)자, 상한 (\d+)자\)", report[0]) if report else None
+    if size:
+        chars, target, limit = (int(number) for number in size.groups())
+        if target < chars <= limit and len(found) < 8 and once("size-target", NUDGE_EVERY_DAYS):
+            found.append(f"항상 읽는 세 쪽 {chars}자 > 목표 {target}자({limit}자부터 저장이 막힘): 사용자에게 정리를"
+                         " 한 줄로 제안할 것(자주 안 쓰는 줄을 lessons, projects 카드, archive로 옮김)")
     found.extend(version_drift())
     age = backup_age_days()
     # Only when it will fit under the cut in main(): once() marks the reminder as given for 7 days.
