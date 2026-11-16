@@ -45,9 +45,12 @@ CAP = re.compile(r"^<!-- cap: (\d+) lines / (\d+) KB -->\s*$")
 ENTRY = re.compile(r"^- \[(decision|fact|pref|rule|lesson|open|superseded)\]")
 MAX_LINE = 200
 CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)")
-SOURCE = re.compile(r"\(출처:\s*([^;)]*)")
-# 출처 칸에서 «파일 경로처럼 생긴 것»만 검사한다: 슬래시가 있고 흔한 문서·코드 확장자로 끝나는 것(#앵커·:줄번호 허용).
-# 커밋 해시, session:id, «사용자 2026-11-12» 같은 출처는 건드리지 않는다.
+# The source field is "(source: ..." in English notebooks and "(출처: ..." in notebooks written before the plugin
+# was translated. Both spellings are accepted so that existing notebooks keep passing.
+SOURCE = re.compile(r"\((?:[Ss]ource|출처):\s*([^;)]*)")
+HAS_SOURCE = re.compile(r"(?:[Ss]ource|출처):")
+# Only path-like pieces of the source field are checked: a slash, and a common document or code extension at the
+# end (an #anchor or :line is allowed). Commit hashes, session:id and "user 2026-11-12" are left alone.
 PATHLIKE = re.compile(r"^(~?/?[\w.@+-]+(?:/[\w.@+-]+)+\.(?:md|txt|py|js|ts|tsx|json|ya?ml|sh|toml))(?:#\S*|:\d+)?$")
 
 
@@ -64,7 +67,7 @@ def source_paths(line):
 
 
 def source_exists(path):
-    """경로는 ~/·절대경로 그대로, 그 밖에는 수첩을 연 폴더 기준으로 찾는다(예: wiki/projects/x.md → HOME/wiki/...)."""
+    """~/ and absolute paths as written; anything else from the opened folder (wiki/projects/x.md → HOME/wiki/...)."""
     if path.startswith("~"):
         return os.path.exists(os.path.expanduser(path))
     if path.startswith("/"):
@@ -91,26 +94,26 @@ def check_page(rel):
         with open(os.path.join(HOME, rel), encoding="utf-8") as handle:
             text = handle.read()
     except (OSError, UnicodeDecodeError) as error:
-        return [f"{rel}: 읽을 수 없음 ({error.__class__.__name__})"]
+        return [f"{rel}: cannot read ({error.__class__.__name__})"]
     lines = text.splitlines()
     conflict = [number for number, line in enumerate(lines, 1) if CONFLICT.match(line)]
     if conflict:
-        return [f"{rel}:{conflict[0]}: 병합 충돌 표시가 남아 있음"]
+        return [f"{rel}:{conflict[0]}: merge conflict markers left"]
     match = CAP.match(lines[0]) if lines else None
     if not match:
-        return [f"{rel}: 첫 줄에 '<!-- cap: N lines / M KB -->'가 없음"]
+        return [f"{rel}: first line is not '<!-- cap: N lines / M KB -->'"]
     max_lines, max_kb = int(match.group(1)), int(match.group(2))
     if len(lines) > max_lines:
-        problems.append(f"{rel}: {len(lines)}줄 > 상한 {max_lines}줄 (주제별로 쪼개거나 줄일 것)")
+        problems.append(f"{rel}: {len(lines)} lines > cap {max_lines} lines (split by topic or shorten)")
     if len(text.encode("utf-8")) > max_kb * 1024:
-        problems.append(f"{rel}: {len(text.encode('utf-8'))}B > 상한 {max_kb}KB (주제별로 쪼개거나 줄일 것)")
+        problems.append(f"{rel}: {len(text.encode('utf-8'))} B > cap {max_kb} KB (split by topic or shorten)")
     for number, line in enumerate(lines, 1):
         if not ENTRY.match(line):
             continue
         if len(line) > MAX_LINE:
-            problems.append(f"{rel}:{number}: 한 줄 {len(line)}자 > {MAX_LINE}자")
-        if line.startswith(("- [fact]", "- [decision]")) and "출처:" not in line:
-            problems.append(f"{rel}:{number}: [fact]/[decision] 줄에 출처가 없음")
+            problems.append(f"{rel}:{number}: line of {len(line)} characters > {MAX_LINE}")
+        if line.startswith(("- [fact]", "- [decision]")) and not HAS_SOURCE.search(line):
+            problems.append(f"{rel}:{number}: [fact]/[decision] line has no source")
     return problems
 
 
@@ -122,7 +125,7 @@ def missing_sources(rel):
             lines = handle.read().splitlines()
     except (OSError, UnicodeDecodeError):
         return []  # check_page() already reports a page it cannot read
-    return [f"{rel}:{number}: 출처 파일이 없음 '{path}' (옮겼으면 출처를 고칠 것)"
+    return [f"{rel}:{number}: source file not found '{path}' (if it moved, fix the source)"
             for number, line in enumerate(lines, 1) if ENTRY.match(line)
             for path in source_paths(line) if not source_exists(path)]
 
@@ -132,8 +135,8 @@ def check_index(pages):
         with open(os.path.join(BRAIN, "INDEX.md"), encoding="utf-8", errors="replace") as handle:
             index = handle.read()
     except OSError:
-        return ["brain/INDEX.md: 없음"]
-    return [f"brain/INDEX.md: '{rel}' 줄이 없음" for rel in pages if rel != "brain/INDEX.md" and rel not in index]
+        return ["brain/INDEX.md: missing"]
+    return [f"brain/INDEX.md: no entry for '{rel}'" for rel in pages if rel != "brain/INDEX.md" and rel not in index]
 
 
 def log_line_lengths():
@@ -147,13 +150,14 @@ def log_line_lengths():
             with open(path, "rb") as handle:
                 handle.read().decode("utf-8")
         except UnicodeDecodeError:
-            problems.append(f"brain/log/{name}: UTF-8이 아닌 바이트가 있음")
+            problems.append(f"brain/log/{name}: contains bytes that are not UTF-8")
         with open(path, encoding="utf-8", errors="replace") as handle:
             for number, line in enumerate(handle, 1):
                 if CONFLICT.match(line):
-                    problems.append(f"brain/log/{name}:{number}: 병합 충돌 표시가 남아 있음")
-                if len(line.rstrip("\n")) > MAX_LINE:
-                    problems.append(f"brain/log/{name}:{number}: 한 줄 {len(line.rstrip())}자 > {MAX_LINE}자")
+                    problems.append(f"brain/log/{name}:{number}: merge conflict markers left")
+                length = len(line.rstrip("\n"))  # the same length in the test and in the message
+                if length > MAX_LINE:
+                    problems.append(f"brain/log/{name}:{number}: line of {length} characters > {MAX_LINE}")
     return problems
 
 
@@ -169,10 +173,10 @@ def archive_conflicts():
                 with open(path, encoding="utf-8", errors="replace") as handle:
                     for number, line in enumerate(handle, 1):
                         if CONFLICT.match(line):
-                            problems.append(f"{rel}:{number}: 병합 충돌 표시가 남아 있음")
+                            problems.append(f"{rel}:{number}: merge conflict markers left")
                             break
             except OSError as error:
-                problems.append(f"{rel}: 읽을 수 없음 ({error.__class__.__name__})")
+                problems.append(f"{rel}: cannot read ({error.__class__.__name__})")
     return problems
 
 
@@ -199,7 +203,7 @@ def full_check():
     problems.extend(archive_conflicts())
     size = always_read_size()
     if size > ALWAYS_READ_LIMIT:
-        problems.append(f"항상 읽는 세 쪽 {size}자 > 상한 {ALWAYS_READ_LIMIT}자 (INDEX, me, now를 줄일 것)")
+        problems.append(f"always-read pages {size} characters > limit {ALWAYS_READ_LIMIT} (shorten INDEX, me, now)")
     return problems, warnings, size
 
 
@@ -258,9 +262,9 @@ def own_git(top=None):
 def no_own_git_reason():
     """Why the notebook has no usable history of its own, in words for the user."""
     if not os.path.lexists(os.path.join(BRAIN, ".git")):
-        return "brain/에 자체 git 기록(brain/.git)이 없음. brain/에서 git init -b main 하면 다시 저장한다"
+        return "brain/ has no git history of its own (brain/.git). Run git init -b main in brain/ to resume saving"
     complaint = git("rev-parse", "--show-toplevel").stderr.strip().splitlines()
-    return f"brain/.git을 git이 쓰지 못함({complaint[0] if complaint else '다른 저장소의 일부로 보임'})"
+    return f"git cannot use brain/.git ({complaint[0] if complaint else 'it looks like part of another repository'})"
 
 
 def is_notebook():
@@ -324,13 +328,13 @@ def commit_brain():
         # Never commit into a repository that merely encloses brain/. Tell the user only when something is
         # left unsaved, not at the end of every turn; the session-start signal covers the rest.
         if changed_paths():
-            tell_user("수첩 자동 저장 건너뜀: " + no_own_git_reason())
+            tell_user("Notebook auto-save skipped: " + no_own_git_reason())
         return
     if git_busy():
         return
     branch = git("symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
     if branch != "main":
-        tell_user(f"수첩 자동 저장 건너뜀: 수첩 git이 main이 아님 ({branch or 'detached HEAD'})")
+        tell_user(f"Notebook auto-save skipped: the notebook's git is not on main ({branch or 'detached HEAD'})")
         return
     changed = changed_paths()
     if not changed:
@@ -347,19 +351,19 @@ def commit_brain():
     git("add", "-A", "--", ".")
     result = git("commit", "-q", "-m", message, "--", ".")
     if result.returncode != 0:
-        tell_user("수첩 자동 저장 실패: " + (result.stderr.strip().splitlines() or ["?"])[0])
+        tell_user("Notebook auto-save failed: " + (result.stderr.strip().splitlines() or ["?"])[0])
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "--report"
     if not os.path.isdir(BRAIN):
         if mode == "--report":
-            print(f"수첩 없음: {BRAIN}")
+            print(f"No notebook: {BRAIN}")
             return 1
         return 0
     if not is_notebook():
         if mode == "--report":
-            print(f"수첩 아님: {BRAIN} (brain/INDEX.md 없음)")
+            print(f"Not a notebook: {BRAIN} (no brain/INDEX.md)")
             return 1
         return 0
     if mode == "--post":
@@ -376,10 +380,10 @@ def main():
             warnings = missing_sources(rel) if checked else []  # most likely a path Claude has just written
         message = []
         if problems:
-            message.append("뇌 규칙 위반, 고칠 것:\n" + "\n".join(problems))
+            message.append("Brain rule violations, fix them:\n" + "\n".join(problems))
         if warnings:
-            message.append("뇌 경고(저장은 막지 않음). 경로를 잘못 적었으면 고치고, 파일이 옮겨졌는데 어디인지 모르면"
-                           " 사용자에게 알린다:\n" + "\n".join(warnings))
+            message.append("Brain warnings (saving is not blocked). If you wrote a wrong path, fix it; if the file was"
+                           " moved and you do not know where, tell the user:\n" + "\n".join(warnings))
         if message:
             print("\n".join(message), file=sys.stderr)  # exit 2 after a tool only shows this to Claude
             return 2
@@ -391,15 +395,18 @@ def main():
         # silently stop being saved. Claude hears it with the first block of the turn (usually the conflict
         # markers themselves), the user if it is still open on the retry.
         busy = own_git() and git_busy()
-        for_claude = ("수첩 git에서 병합·cherry-pick·rebase가 진행 중이라 hook이 저장하지 못한다: 주간 정리 합치기라면"
-                      " 충돌을 고친 뒤 git -C brain commit 으로 직접 마치고, 아니면 사용자에게 알린다.")
-        for_user = "수첩 자동 저장 건너뜀: 수첩 git에서 병합·cherry-pick·rebase가 진행 중 (brain/에서 git status로 확인)"
+        for_claude = ("A merge, cherry-pick or rebase is in progress in the notebook's git, so the hook cannot save:"
+                      " if it is the weekly tidy merge, fix the conflicts and finish it yourself with"
+                      " git -C brain commit; otherwise tell the user.")
+        for_user = ("Notebook auto-save skipped: a merge, cherry-pick or rebase is in progress in the notebook's git"
+                    " (see git status in brain/)")
         if problems:
             if data.get("stop_hook_active"):
-                tell_user("수첩 자동 저장 건너뜀: 뇌 검사 문제가 남아 있음: " + "; ".join(problems[:3]))
+                tell_user("Notebook auto-save skipped: brain check problems remain: " + "; ".join(problems[:3]))
                 return 0
-            print("턴을 끝내기 전에 뇌 규칙 위반을 고칠 것:\n" + "\n".join(problems[:10]) + "\n"
-                  + (for_claude if busy else "고친 뒤 확인은 brain-check.py --report로 한다. 저장은 턴이 끝날 때 이 hook이 한다."),
+            print("Fix these brain rule violations before ending the turn:\n" + "\n".join(problems[:10]) + "\n"
+                  + (for_claude if busy else "Check with brain-check.py --report after fixing. Saving is done by"
+                     " this hook at the end of the turn."),
                   file=sys.stderr)
             return 2
         if busy:
@@ -411,13 +418,15 @@ def main():
         commit_brain()
         return 0
     problems, warnings, size = full_check()
-    print(f"항상 읽는 세 쪽: {size}자 (목표 {ALWAYS_READ_TARGET}자, 상한 {ALWAYS_READ_LIMIT}자)")
+    # brain-signals.py reads this output: the first line by its exact shape, warnings by the "warning: " prefix,
+    # and the last line by the "Result:" prefix. Change them together.
+    print(f"Always-read pages: {size} characters (target {ALWAYS_READ_TARGET}, limit {ALWAYS_READ_LIMIT})")
     for problem in problems:
         print(problem)
     for warning in warnings:
-        print("경고: " + warning)  # brain-signals.py picks these lines out by this prefix
-    summary = "문제 없음" if not problems else f"문제 {len(problems)}건"
-    print(summary + (f" (경고 {len(warnings)}건, 저장은 막지 않음)" if warnings else ""))
+        print("warning: " + warning)
+    summary = "Result: no problems" if not problems else f"Result: {len(problems)} problem(s)"
+    print(summary + (f" ({len(warnings)} warning(s), saving is not blocked)" if warnings else ""))
     return 1 if problems else 0
 
 

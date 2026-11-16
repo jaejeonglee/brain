@@ -1,9 +1,9 @@
 <!-- cap: 50 lines / 8 KB -->
-# 사용자
-고칠 때는 같은 줄을 고치고 늘리지 않는다. [rule]과 [pref]는 사용자 발화나 사용자가 승인한 규칙 문서에서만 만든다(brain 스킬의 목록).
+# User
+To change something, edit the same line instead of adding one. [rule] and [pref] come only from the user's own words or a rule document the user approved (see the brain skill).
 
-## 일하는 방식
+## How I work
 
-## 지킬 것
+## Things to keep
 
-## 말하는 방식
+## How I talk

@@ -1,6 +1,6 @@
 <!-- cap: 40 lines / 4 KB -->
-# 지금판
-덮어쓰기만 한다. 끝난 행은 지우고 log에 남긴다. 활성 행 8개 이하.
+# Now
+Overwrite only. Delete finished rows and leave them in the log. At most 8 active rows.
 
-| 일 | 프로젝트 | 상태 | 기다리는 것 | 다음 행동 |
+| Work | Project | State | Waiting for | Next step |
 | --- | --- | --- | --- | --- |

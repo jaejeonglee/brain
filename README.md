@@ -58,7 +58,7 @@ Claude  (shows the plan as a bullet list, as the notebook says)
 | `log/YYYY-MM.md` | Monthly log | When searching |
 | `archive/` | Archive | When searching |
 
-- Line format: `- [pref] Show plans as bullet lists #ux (출처: 사용자 2026-11-10)`. `출처` means "source" and is the keyword the check looks for; `사용자 <date>` means you said it on that date.
+- Line format: `- [pref] Show plans as bullet lists #ux (source: user 2026-11-10)`. `user <date>` means you said it on that date. Entries are written in the language you speak to Claude. Notebooks written before the English version use `출처:` instead of `source:`; both are accepted.
 - When the source is a file path (such as `wiki/projects/x.md`), the check verifies that the file exists. If it does not, saving still goes ahead and you are told when the next conversation opens. Keep the long reasoning in that document and only the one-line conclusion in the notebook.
 - The notebook keeps its own git history (`brain/.git`). Even when the folder is a project repository, the notebook never mixes with the project's history, and having no remote, it cannot be pushed by accident. If `brain/.git` is missing, the notebook is not saved into the project repository instead: saving is skipped and you are told.
 - If an existing `brain/` is not a notebook (it has no `brain/INDEX.md`), it is left alone and the notebook is not used in that folder. This keeps a project source folder, or another repository with the same name, from being mistaken for the notebook.

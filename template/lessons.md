@@ -1,3 +1,3 @@
 <!-- cap: 150 lines / 12 KB -->
-# 교훈
-여러 일에 걸쳐 다시 쓸 교훈만 둔다. 도구 하나의 동작은 facts 페이지에 둔다.
+# Lessons
+Only lessons that will be reused across jobs. How a single tool behaves goes on a facts page.
